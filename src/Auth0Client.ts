@@ -19,7 +19,7 @@ import { getUniqueScopes } from './scope';
 import { InMemoryCache, ICache, LocalStorageCache, CacheKey } from './cache';
 import TransactionManager from './transaction-manager';
 import { verify as verifyIdToken } from './jwt';
-import { AuthenticationError, TimeoutError } from './errors';
+import { AuthenticationError, TimeoutError, GenericError } from './errors';
 
 import {
   ClientStorage,
@@ -990,5 +990,129 @@ export default class Auth0Client {
       scope: options.scope,
       audience: options.audience || 'default'
     };
+  }
+
+  public async loginWithUsernameAndPassword(options: any = {}) {
+    const {
+      redirectUri,
+      appState,
+      username,
+      password,
+      realm,
+      ...authorizeOptions
+    } = options;
+
+    const authenticateBody = {
+      client_id: this.options.client_id,
+      username,
+      password,
+      realm,
+      credential_type: 'http://auth0.com/oauth/grant-type/password-realm'
+    };
+
+    const requestHeaders: HeadersInit = new Headers();
+    requestHeaders.set('Content-Type', 'application/json');
+    requestHeaders.set('Accept', 'application/json');
+
+    const response = await fetch(`${this.domainUrl}/co/authenticate`, {
+      method: 'POST',
+      body: JSON.stringify(authenticateBody),
+      credentials: 'include',
+      headers: requestHeaders
+    });
+
+    const { login_ticket, error, error_description } = await response.json();
+
+    if (response.ok) {
+      const url = await this.buildAuthorizeUrl({
+        login_ticket: login_ticket,
+        realm
+      });
+      window.location.assign(url);
+    } else {
+      if (error) {
+        throw new AuthenticationError(error, error_description, '', '');
+      }
+    }
+  }
+
+  public async signUpWithUsernameAndPassword(options: any = {}) {
+    const { username, email, password, realm, metadata } = options;
+
+    const authenticateBody = {
+      client_id: this.options.client_id,
+      username,
+      email,
+      password,
+      connection: realm,
+      user_metadata: metadata
+    };
+
+    const requestHeaders: HeadersInit = new Headers();
+    requestHeaders.set('Content-Type', 'application/json');
+    requestHeaders.set('Accept', 'application/json');
+
+    const response = await fetch(`${this.domainUrl}/dbconnections/signup`, {
+      method: 'POST',
+      body: JSON.stringify(authenticateBody),
+      // credentials: 'include',
+      headers: requestHeaders
+    });
+
+    const { error, code, description, message } = await response.json();
+    if (response.ok) {
+      //  await this.loginWithUsernameAndPassword({
+      //   realm,
+      //   username: username || email,
+      //   password
+      // });
+    } else {
+      if (error || code) {
+        throw new GenericError(
+          code || error,
+          typeof description === 'string' ? description : message || error
+        );
+      }
+    }
+  }
+
+  public async resetPasswordWithUsername(options: any = {}) {
+    const { username, email, realm } = options;
+
+    const authenticateBody = {
+      client_id: this.options.client_id,
+      username,
+      email,
+      connection: realm
+    };
+
+    const requestHeaders: HeadersInit = new Headers();
+    requestHeaders.set('Content-Type', 'application/json');
+    requestHeaders.set('Accept', 'application/json');
+
+    const response = await fetch(
+      `${this.domainUrl}/dbconnections/change_password`,
+      {
+        method: 'POST',
+        body: JSON.stringify(authenticateBody),
+        headers: requestHeaders
+      }
+    );
+
+    const { error, code, description, message } = await response.json();
+    if (response.ok) {
+      //  await this.loginWithUsernameAndPassword({
+      //   realm,
+      //   username: username || email,
+      //   password
+      // });
+    } else {
+      if (error || code) {
+        throw new GenericError(
+          code || error,
+          typeof description === 'string' ? description : message || error
+        );
+      }
+    }
   }
 }
